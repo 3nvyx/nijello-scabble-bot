@@ -1,0 +1,10 @@
+{
+  "name": "scrabblebot-evo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "bench": "node src/bench.ts",
+    "train": "node src/train.ts"
+  }
+}

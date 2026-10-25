@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nijello Live</title>
+<style>
+  :root {
+    --bg: #0e1311;
+    --panel: #161d1a;
+    --panel-2: #1c2521;
+    --line: #27322d;
+    --text: #e7ece9;
+    --muted: #8b9a93;
+    --faint: #5d6b65;
+    --accent: #f0b64a;
+    --accent-soft: rgba(240, 182, 74, 0.13);
+    --good: #5ccf88;
+    --good-soft: rgba(92, 207, 136, 0.14);
+    --top: #8fb3ff;
+    --bad: #e46a5a;
+    --tile: #f2e4c2;
+    --tile-edge: #cdb98d;
+    --tile-ink: #2a2214;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f3f1ea;
+      --panel: #ffffff;
+      --panel-2: #f7f5ef;
+      --line: #e2ddd0;
+      --text: #1d2420;
+      --muted: #66736d;
+      --faint: #9aa59f;
+      --accent: #b97a0c;
+      --accent-soft: rgba(185, 122, 12, 0.11);
+      --good: #1f8f50;
+      --good-soft: rgba(31, 143, 80, 0.12);
+      --top: #3b63c4;
+      --bad: #c0412f;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px;
+    padding: 16px 24px; border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; letter-spacing: -0.01em; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em; }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .live.on i { background: var(--good); animation: pulse 2s infinite; }
+  .live.on { color: var(--good); }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(92,207,136,.5); } 70% { box-shadow: 0 0 0 7px rgba(92,207,136,0); } 100% { box-shadow: 0 0 0 0 rgba(92,207,136,0); } }
+  .stats { display: flex; flex-wrap: wrap; gap: 8px 26px; margin-left: auto; }
+  .stat { display: flex; flex-direction: column; }
+  .stat b { font-size: 17px; font-weight: 650; }
+  .stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat.stale b { color: var(--bad); }
+
+  .intro { max-width: 1440px; margin: 0 auto; padding: 14px 24px 0; color: var(--muted); font-size: 14px; }
+  .intro b { color: var(--text); font-weight: 600; }
+  .intro .us { color: var(--accent); font-weight: 650; }
+
+  main {
+    display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px;
+    padding: 14px 24px 28px; max-width: 1440px; margin: 0 auto;
+  }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  h2 { margin: 0 0 10px; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+
+  /* stage */
+  .stage { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 13px; }
+  .meta b { color: var(--text); font-weight: 600; }
+  .progress { height: 4px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+
+  .auction { display: flex; align-items: center; gap: 20px; padding: 16px 18px; margin-bottom: 4px;
+    background: radial-gradient(circle at 54px 50%, var(--accent-soft), transparent 260px), var(--panel-2);
+    border: 1px solid var(--line); border-radius: var(--radius); min-height: 112px; transition: border-color .3s; }
+  .auction.bidding { border-color: var(--accent); }
+  .auction .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+  .auction .say { font-size: 21px; font-weight: 650; margin-top: 2px; letter-spacing: -0.01em; }
+  .auction .sub { color: var(--muted); font-size: 13.5px; margin-top: 3px; }
+  .auction .sub b { color: var(--text); font-weight: 600; }
+
+  .tile {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 32px; border-radius: 5px; background: var(--tile); color: var(--tile-ink);
+    font: 700 17px/1 ui-serif, Georgia, "Times New Roman", serif;
+    box-shadow: inset 0 -2px 0 var(--tile-edge), 0 1px 2px rgba(0,0,0,.25);
+  }
+  .tile sub { position: absolute; right: 3px; bottom: 3px; font: 600 8px/1 ui-sans-serif, system-ui, sans-serif; }
+  .tile.big { width: 72px; height: 76px; font-size: 42px; border-radius: 10px; flex: none;
+    box-shadow: inset 0 -4px 0 var(--tile-edge), 0 4px 14px rgba(0,0,0,.3); }
+  .tile.big sub { font-size: 13px; right: 7px; bottom: 7px; }
+  .tile.empty { background: transparent; box-shadow: none; border: 2px dashed var(--line); color: var(--faint); }
+  .tile.new { animation: drop .45s cubic-bezier(.2,.9,.3,1.3); }
+  @keyframes drop { from { transform: translateY(-14px) scale(.8); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  .players { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .card { padding: 12px 13px; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: var(--radius); display: flex; flex-direction: column; gap: 9px; min-width: 0;
+    transition: border-color .25s, background .25s; }
+  .card.evo { border-color: var(--accent); background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--panel-2); }
+  .card.won { border-color: var(--good); }
+  .card .top { display: flex; align-items: flex-start; gap: 8px; }
+  .card .who { min-width: 0; flex: 1; }
+  .card .name { font-weight: 650; display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .card .name span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    padding: 2px 6px; border-radius: 4px; }
+  .badge.us { background: var(--accent); color: #1e1606; }
+  .badge.top { color: var(--top); border: 1px solid currentColor; }
+  .card .kind { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip { flex: none; margin-left: auto; font-size: 12px; font-weight: 700; padding: 3px 8px; white-space: nowrap;
+    border-radius: 99px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); }
+  .chip.sealed { color: var(--faint); font-weight: 600; }
+  .chip.high { color: var(--text); }
+  .chip.win { background: var(--good); border-color: var(--good); color: #08140d; }
+  .chip.p1 { background: var(--accent); border-color: var(--accent); color: #1e1606; }
+  .card .nums { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+  .card .nums b { color: var(--text); font-size: 20px; font-weight: 700; margin-right: 3px; }
+  .card .lead { color: var(--good); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; align-self: center; margin-left: auto; }
+  .rack { display: flex; flex-wrap: wrap; gap: 4px; min-height: 32px; }
+  .rack .none, .played .none { color: var(--faint); font-size: 12px; align-self: center; }
+  .played { display: flex; align-items: center; gap: 3px; min-height: 26px; flex-wrap: wrap; }
+  .played .tile { width: 22px; height: 24px; font-size: 13px; }
+  .played .tile sub { display: none; }
+  .played .gain { margin-left: 6px; font-weight: 700; color: var(--good); font-size: 13px; }
+  .played.fresh { animation: pop .5s ease; }
+  .played.old { opacity: .45; }
+  @keyframes pop { from { transform: scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* side */
+  aside { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  aside .panel { padding: 16px; }
+  .feed { list-style: none; margin: 0; padding: 0; max-height: 330px; overflow: auto; font-size: 13px; }
+  .feed li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: baseline; }
+  .feed li:last-child { border-bottom: 0; }
+  .feed .r { color: var(--faint); font-size: 11px; width: 30px; flex: none; }
+  .feed .w { font-weight: 700; letter-spacing: .04em; }
+  .feed .g { color: var(--good); font-weight: 650; }
+  .feed .me { color: var(--accent); font-weight: 650; }
+  .feed .sys { color: var(--muted); }
+
+  .record { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; align-items: center; }
+  .record span { width: 32px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+  .record span.p1 { background: var(--accent); border-color: var(--accent); color: #1e1606; }
+  .record span.p2 { color: var(--text); }
+  .record span.latest { outline: 2px solid var(--text); outline-offset: 1px; }
+  .record em { font-style: normal; font-size: 11px; color: var(--faint); margin-left: 4px; }
+  .note { font-size: 13px; color: var(--muted); }
+  .note b { color: var(--text); }
+
+  .chart { width: 100%; height: 130px; display: block; margin: 6px 0 6px; overflow: visible; }
+  .chart text { fill: var(--faint); font-size: 10px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  .bench { margin-top: 12px; display: grid; gap: 7px; font-size: 13px; }
+  .bench .row { display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center; }
+  .bench .bar { height: 6px; background: var(--panel-2); border-radius: 4px; position: relative; overflow: hidden; margin-top: 3px; }
+  .bench .bar i { position: absolute; inset: 0 auto 0 0; background: var(--good); border-radius: 4px; }
+  .bench .bar u { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--faint); }
+  .bench .row b { text-align: right; }
+
+  /* live arena */
+  .arena { border-color: var(--good); }
+  .arena h2 { display: flex; align-items: center; gap: 8px; }
+  .arena h2 .src { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); }
+  .astats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .astats div { display: flex; flex-direction: column; }
+  .astats b { font-size: 19px; font-weight: 700; }
+  .astats span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .spark { width: 100%; height: 56px; display: block; margin: 2px 0 8px; overflow: visible; }
+  .spark text { fill: var(--faint); font-size: 10px; }
+  .now { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--good-soft); margin-bottom: 10px; }
+  .now b { font-weight: 650; }
+  .now .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 6px; animation: pulse 2s infinite; }
+  .alist { list-style: none; margin: 0; padding: 0; font-size: 13px; max-height: 300px; overflow: auto; }
+  .alist li { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .alist li:last-child { border-bottom: 0; }
+  .alist .pl { height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+  .alist .pl.p1 { background: var(--accent); border-color: var(--accent); color: #1e1606; }
+  .alist .pl.p2 { color: var(--text); }
+  .alist .vs { color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .alist .vs b { color: var(--text); font-weight: 600; }
+  .alist .when { color: var(--faint); font-size: 11px; }
+
+  footer { max-width: 1440px; margin: 0 auto; padding: 0 24px 28px; color: var(--muted); font-size: 13px; }
+  footer p { margin: 0 0 6px; max-width: 920px; }
+
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr; }
+    .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 560px) {
+    header { padding: 14px 16px; gap: 10px 18px; }
+    .stats { margin-left: 0; gap: 8px 18px; }
+    .stat b { font-size: 15px; }
+    .intro { padding: 12px 16px 0; }
+    main { padding: 12px 16px 20px; }
+    footer { padding: 0 16px 24px; }
+    .stage { padding: 12px; gap: 12px; }
+    .auction { position: sticky; top: 0; z-index: 2; gap: 14px; padding: 12px; min-height: 0; background: var(--panel-2); }
+    .auction .say { font-size: 17px; }
+    .tile.big { width: 54px; height: 58px; font-size: 32px; }
+    .players { gap: 8px; }
+    .card { padding: 9px 10px; gap: 6px; }
+    .card .nums { gap: 10px; }
+    .card .nums b { font-size: 16px; }
+    .card .kind { display: none; }
+    .tile { width: 22px; height: 24px; font-size: 13px; }
+    .tile sub { font-size: 6px; right: 2px; bottom: 2px; }
+    .chip { font-size: 11px; padding: 2px 6px; }
+  }
+  @media (max-width: 359px) { .players { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Scrabblebot Evolution <span class="live" id="live"><i></i><span id="liveText">connecting</span></span></div>
+  <div class="stats">
+    <div class="stat" id="stGen"><b class="num" id="sGen">–</b><span>Generation</span></div>
+    <div class="stat" id="stGames"><b class="num" id="sGames">–</b><span>Games simulated</span></div>
+    <div class="stat"><b class="num" id="sRate">–</b><span>Games / sec</span></div>
+    <div class="stat"><b class="num" id="sField">–</b><span id="sFieldLabel">Win rate vs top bots</span></div>
+    <div class="stat" id="stPeak" title="Training since the live settings were last beaten on 3000 fresh games"><b class="num" id="sPeak">–</b><span>Since last improvement</span></div>
+    <div class="stat" id="stLat"><b class="num" id="sLat">–</b><span>Decision time (p99)</span></div>
+    <div class="stat" id="stLeft"><b class="num" id="sLeft">–</b><span>Training left</span></div>
+  </div>
+</header>
+
+<p class="intro">Watch <span class="us">Nijello</span>, our bot (gold), play live against models of the real arena's top bots. Six bots bid coins for one letter per round and spell words from their letters; <b>most points when the bag runs out wins</b>. In the background, training plays thousands of games a second to improve it.</p>
+
+<main>
+  <section class="panel stage">
+    <div>
+      <div class="meta" id="meta"><span>Waiting for the first match…</span></div>
+      <div class="progress" style="margin-top:10px"><i id="prog"></i></div>
+    </div>
+    <div class="auction" id="auction">
+      <span class="tile big empty" id="bigTile">?</span>
+      <div>
+        <div class="label" id="aLabel">Auction</div>
+        <div class="say" id="aSay">Dealing racks…</div>
+        <div class="sub" id="aSub"></div>
+      </div>
+    </div>
+    <div class="sr" aria-live="polite" id="announce"></div>
+    <div class="players" id="players"></div>
+  </section>
+
+  <aside>
+    <section class="panel arena" id="arena">
+      <h2>Live arena <span class="src">real matches · official server</span></h2>
+      <div id="arenaBody" class="note">Looking up Nijello on the official server…</div>
+    </section>
+    <section class="panel">
+      <h2>Play by play</h2>
+      <ul class="feed" id="feed"></ul>
+    </section>
+    <section class="panel">
+      <h2>Showcase record</h2>
+      <div class="record" id="record"></div>
+      <div class="note" id="recordNote">Nijello's finishing place in each match shown here.</div>
+    </section>
+    <section class="panel">
+      <h2>Training progress <span id="runName" style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--faint)"></span></h2>
+      <svg class="chart" id="chart" aria-label="Benchmark win rate per generation"></svg>
+      <div class="legend" id="legend"></div>
+      <div class="bench" id="bench"></div>
+    </section>
+  </aside>
+</main>
+
+<footer>
+  <p><b>Rules.</b> Everyone starts with 100 coins and 5 random letters. Each round one letter from the bag gets sealed bids; the highest bid wins it. In a Vickrey auction the winner pays the second-highest bid, in a first-price auction their own. Words earn coins and points at once: letter values times a length bonus (1× up to 3 letters, 3× for 7+), which is why strong bots save up for 7-letter words.</p>
+  <p><b>Who's playing.</b> Named opponents are models of the arena's top bots, built from their public match history: they bid like the real bot's past winning bids and favour the word lengths it plays. They are approximations, not the bots themselves. "Field model" bids like the average real bot; sims and starter kits are the server's simple bots. Showcase matches are extra games, slowed down so you can follow them; they don't affect training.</p>
+</footer>
+
+<script>
+const FACE = [1,3,3,2,1,4,2,4,1,8,5,1,3,1,1,3,10,1,1,1,1,4,4,8,4,10];
+const $ = (id) => document.getElementById(id);
+const L = (c) => String.fromCharCode(65 + c);
+const ord = (n) => n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th");
+const fmt = (n) => Math.round(n).toLocaleString();
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+function tile(ch, cls = "") {
+  const v = FACE[ch.charCodeAt(0) - 65];
+  return `<span class="tile ${cls}">${ch}<sub>${v}</sub></span>`;
+}
+
+let M = null;           // current match header
+let cards = [];         // per-seat DOM refs
+let round = 0, total = 68, lastState = null, feedCount = 0, bids = null;
+
+function startMatch(h) {
+  M = h;
+  round = 0; total = 68; lastState = null; bids = null;
+  $("feed").innerHTML = "";
+  feedCount = 0;
+  $("players").innerHTML = h.players.map((p, i) => {
+    const badge = p.kind === "evo" ? `<span class="badge us">Our bot</span>` : p.kind === "top" ? `<span class="badge top">Top bot</span>` : "";
+    const kind = p.detail;
+    return `
+    <div class="card ${p.kind === "evo" ? "evo" : ""}" id="c${i}">
+      <div class="top">
+        <div class="who"><div class="name"><span>${esc(p.name)}</span>${badge}</div><div class="kind">${esc(kind)}</div></div>
+        <span class="chip" hidden></span>
+      </div>
+      <div class="nums"><span><b class="num">0</b>points</span><span><b class="num">100</b>coins</span><span class="lead" hidden>leading</span></div>
+      <div class="rack"></div>
+      <div class="played"><span class="none">no words yet</span></div>
+    </div>`;
+  }).join("");
+  cards = h.players.map((_, i) => {
+    const el = $("c" + i);
+    const [score, coins] = el.querySelectorAll(".nums b");
+    return { el, score, coins, lead: el.querySelector(".lead"), rack: el.querySelector(".rack"), played: el.querySelector(".played"), chip: el.querySelector(".chip"), timer: 0 };
+  });
+  setMeta();
+  setStage("?", true, "New match", "Dealing racks…", "");
+  addFeed("", `Match ${h.id} · ${h.auctionType === "Vickrey" ? "Vickrey (second-price)" : "first-price"} auctions`, true);
+}
+
+function setStage(big, empty, label, say, sub, anim = false) {
+  const t = $("bigTile");
+  t.className = "tile big" + (empty ? " empty" : "") + (anim ? " new" : "");
+  t.innerHTML = big;
+  $("aLabel").textContent = label;
+  $("aSay").textContent = say;
+  $("aSub").innerHTML = sub;
+}
+
+function setMeta() {
+  if (!M) return;
+  const left = Math.max(0, total - round);
+  $("meta").innerHTML =
+    `<span>Match <b>#${M.id}</b></span>` +
+    `<span><b>${M.auctionType === "Vickrey" ? "Vickrey" : "First-price"}</b> auctions</span>` +
+    `<span>Round <b class="num">${round}</b> of ${total}</span>` +
+    `<span><b class="num">${left}</b> letters left in bag</span>` +
+    (M.source === "live" ? `<span>Nijello: <b>live strategy</b>, generation ${Number(M.gen)}</span>`
+      : M.source === "training" ? `<span>Nijello: best from training, <b>generation ${Number(M.gen)}</b></span>`
+      : `<span>Nijello: <b>default strategy</b></span>`);
+  $("prog").style.width = `${(100 * round) / total}%`;
+}
+
+function renderState(s, opts = {}) {
+  const prev = lastState;
+  lastState = s;
+  const top = Math.max(...s.scores);
+  s.racks.forEach((r, i) => {
+    const c = cards[i];
+    if (!c) return;
+    c.score.textContent = s.scores[i];
+    c.coins.textContent = s.balances[i];
+    c.lead.hidden = !(top > 0 && s.scores[i] === top);
+    if (!prev || prev.racks[i] !== r) {
+      const added = opts.newTile && opts.newTile.seat === i ? opts.newTile.letter : null;
+      let marked = false;
+      c.rack.innerHTML = r.length
+        ? [...r].map((ch) => {
+            const isNew = !marked && ch === added;
+            if (isNew) marked = true;
+            return tile(ch, isNew ? "new" : "");
+          }).join("")
+        : `<span class="none">no letters</span>`;
+    }
+  });
+}
+
+// bids === null: sealed. winner === undefined: revealed, not yet closed.
+function showBids(bs, winner, paid) {
+  const high = bs ? Math.max(0, ...bs.filter((b) => b !== null)) : 0;
+  cards.forEach((c, i) => {
+    c.chip.hidden = false;
+    if (bs === null) {
+      c.chip.className = "chip sealed";
+      c.chip.textContent = "sealed bid";
+      return;
+    }
+    const b = bs[i];
+    if (b === null) {
+      c.chip.className = "chip";
+      c.chip.textContent = "no bid";
+    } else if (i === winner) {
+      c.chip.className = "chip win";
+      c.chip.textContent = b !== paid ? `won · bid ${b}, paid ${paid}` : `won · paid ${paid}`;
+    } else {
+      c.chip.className = "chip" + (b === high ? " high" : "");
+      c.chip.textContent = `bid ${b}`;
+    }
+  });
+}
+
+function showWord(seat, word, reward, live) {
+  const c = cards[seat];
+  if (!c) return;
+  c.played.className = "played" + (live ? " fresh" : "");
+  c.played.innerHTML = [...word].map((ch) => tile(ch)).join("") + `<span class="gain">+${reward} pts &amp; coins</span>`;
+  clearTimeout(c.timer);
+  if (live) c.timer = setTimeout(() => c.played.classList.add("old"), 4000);
+  else c.played.classList.add("old");
+}
+
+function addFeed(r, html, sys = false) {
+  const li = document.createElement("li");
+  li.innerHTML = `<span class="r">${r}</span><span${sys ? ' class="sys"' : ""}>${html}</span>`;
+  const f = $("feed");
+  f.prepend(li);
+  if (++feedCount > 120) f.lastChild.remove();
+}
+
+function who(seat) {
+  const p = M.players[seat];
+  return p.kind === "evo" ? `<span class="me">${esc(p.name)}</span>` : esc(p.name);
+}
+
+function apply(ev, live) {
+  switch (ev.type) {
+    case "deal":
+      renderState(ev.state);
+      setStage("?", true, "Racks dealt", "Everyone has 5 letters", "First auction coming up");
+      break;
+    case "auction":
+      round = ev.round;
+      total = ev.round + ev.bagLeft;
+      setMeta();
+      setStage(`${L(ev.letter)}<sub>${FACE[ev.letter]}</sub>`, false, `Round ${ev.round} · up for auction`,
+        `Letter ${L(ev.letter)}, worth ${FACE[ev.letter]}`, "Bots are placing sealed bids…", live);
+      $("auction").classList.add("bidding");
+      cards.forEach((c) => c.el.classList.remove("won"));
+      bids = null;
+      showBids(null);
+      renderState(ev.state);
+      break;
+    case "bids":
+      bids = ev.bids;
+      showBids(bids);
+      renderState(ev.state);
+      $("aSub").textContent = "Bids revealed…";
+      break;
+    case "result": {
+      const bs = bids || [];
+      $("auction").classList.remove("bidding");
+      showBids(bs, ev.winner, ev.paid);
+      if (ev.winner >= 0) {
+        const p = M.players[ev.winner];
+        const others = bs.map((b, i) => [b, i]).filter(([b, i]) => b !== null && i !== ev.winner).sort((a, b) => b[0] - a[0]);
+        const n = bs.filter((b) => b !== null).length;
+        let sub = `Bid <b>${bs[ev.winner]}</b>, paid <b>${ev.paid}</b>`;
+        if (M.auctionType === "Vickrey" && others.length) sub += ` (the next-highest bid, by ${esc(M.players[others[0][1]].name)})`;
+        else if (M.auctionType === "Vickrey") sub += " (only bidder)";
+        sub += ` · ${plural(n, "bid")}`;
+        $("aSay").textContent = `${p.name} wins ${L(ev.letter)}`;
+        $("aSub").innerHTML = sub;
+        cards[ev.winner].el.classList.add("won");
+        addFeed(`R${round}`, `${L(ev.letter)} → ${who(ev.winner)} for ${ev.paid}`);
+      } else {
+        $("aSay").textContent = `No one bid on ${L(ev.letter)}`;
+        $("aSub").textContent = "Nobody wanted it";
+        addFeed(`R${round}`, `${L(ev.letter)}: no bids`, true);
+      }
+      renderState(ev.state, live && ev.winner >= 0 ? { newTile: { seat: ev.winner, letter: L(ev.letter) } } : {});
+      break;
+    }
+    case "word":
+      renderState(ev.state);
+      showWord(ev.seat, ev.word, ev.reward, live);
+      addFeed(round ? `R${round}` : "", `${who(ev.seat)} played <span class="w">${ev.word}</span> <span class="g">+${ev.reward}</span>`);
+      break;
+    case "end": {
+      renderState(ev.state);
+      $("auction").classList.remove("bidding");
+      const winners = ev.places.map((p, i) => [p, i]).filter(([p]) => p === 1).map(([, i]) => i);
+      cards.forEach((c, i) => {
+        c.el.classList.remove("won");
+        c.chip.hidden = false;
+        c.chip.className = "chip" + (ev.places[i] === 1 ? " p1" : "");
+        c.chip.textContent = ord(ev.places[i]);
+      });
+      const me = M.spotlight;
+      const names = winners.map((i) => M.players[i].name);
+      const say = winners.length === 1
+        ? `${names[0]} wins with ${ev.scores[winners[0]]} points`
+        : `${names.join(" and ")} tie at ${ev.scores[winners[0]]} points`;
+      setStage("★", true, "Match over", say,
+        `Nijello finished <b>${ord(ev.places[me])}</b> with ${ev.scores[me]} points · next match in a few seconds`);
+      addFeed("", `<b>${esc(say)}</b>`, true);
+      $("announce").textContent = `${say}. Nijello finished ${ord(ev.places[me])}.`;
+      $("prog").style.width = "100%";
+      break;
+    }
+  }
+}
+
+// ---- training status ----
+let S = null, shownGames = 0, clockSkew = 0, curRun = null;
+function onStatus(s) {
+  // A different training run: drop everything shown for the previous one.
+  if (s.run !== curRun) {
+    curRun = s.run;
+    shownGames = 0;
+    $("sPeak").textContent = "–";
+    $("sField").textContent = "–";
+    $("sFieldLabel").textContent = "Win rate vs top bots";
+  }
+  S = s;
+  $("runName").textContent = s.run ? `· run ${s.run}${s.running === false ? " (not running)" : ""}` : "";
+  // Server clock minus ours, so staleness doesn't depend on this device's clock.
+  if (s.now) clockSkew = Date.parse(s.now) - Date.now();
+  $("sGen").textContent = s.gen;
+  $("sRate").textContent = fmt(s.gamesPerSec);
+  const b = s.bench.at(-1);
+  if (b && b.vsTop !== null && b.vsTop !== undefined) {
+    $("sField").textContent = (100 * b.vsTop).toFixed(0) + "%";
+    $("sFieldLabel").textContent = "Win rate vs top bots";
+  } else if (b && b.vsField !== null && b.vsField !== undefined) {
+    $("sField").textContent = (100 * b.vsField).toFixed(0) + "%";
+    $("sFieldLabel").textContent = "Win rate vs field";
+  } else $("sField").textContent = "–";
+  if (s.peak) {
+    const m = Math.round(s.peak.trainMsSince / 6e4);
+    $("sPeak").textContent = s.peak.gensSince > 0 ? `${s.peak.gensSince} gens · ${m >= 60 ? Math.floor(m / 60) + "h " : ""}${m % 60}m` : "just now";
+  }
+  if (s.latency) {
+    $("sLat").textContent = `${s.latency.p99Ms} ms`;
+    $("stLat").title = `Live bot: median ${s.latency.medianMs} ms, max ${s.latency.maxMs} ms of a 1000 ms auction; ${s.latency.late} of ${s.latency.decisions} bids arrived after the auction closed`;
+  }
+  drawChart(s);
+  drawBench(s);
+}
+
+const SERIES = [
+  ["vsTop", "vs top-bot models", "var(--good)"],
+  ["vsField", "vs field models", "var(--muted)"],
+  ["vsLeague", "vs past champions", "var(--accent)"],
+  ["vsGen0", "vs untrained bot", "var(--top)"],
+];
+function drawChart(s) {
+  const svg = $("chart");
+  const pts = s.bench;
+  const W = svg.clientWidth || 300, H = 130, padL = 30, padB = 16, padT = 4;
+  if (pts.length < 2) { svg.innerHTML = ""; $("legend").innerHTML = ""; return; }
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const g0 = pts[0].gen, g1 = pts.at(-1).gen || 1;
+  const x = (g) => padL + ((W - padL - 4) * (g - g0)) / Math.max(1, g1 - g0);
+  const y = (v) => padT + (H - padT - padB) * (1 - v);
+  let out = "";
+  for (const v of [0, 0.5, 1]) out += `<line x1="${padL}" x2="${W - 4}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${padL - 6}" y="${y(v) + 3}" text-anchor="end">${v * 100}%</text>`;
+  out += `<line x1="${padL}" x2="${W - 4}" y1="${y(1 / 6)}" y2="${y(1 / 6)}" stroke="var(--faint)" stroke-dasharray="3 3"/>`;
+  out += `<text x="${padL}" y="${H - 3}">gen ${g0}</text><text x="${W - 4}" y="${H - 3}" text-anchor="end">gen ${g1}</text>`;
+  const shown = [];
+  for (const [k, label, color] of SERIES) {
+    const p = pts.filter((b) => b[k] !== null && b[k] !== undefined);
+    if (p.length < 2) continue;
+    shown.push([label, color]);
+    out += `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" points="${p.map((b) => `${x(b.gen).toFixed(1)},${y(b[k]).toFixed(1)}`).join(" ")}"/>`;
+  }
+  svg.innerHTML = out;
+  $("legend").innerHTML = shown.map(([l, c]) => `<span><i style="background:${c}"></i>${l}</span>`).join("") +
+    `<span><i style="background:var(--faint)"></i>fair share (1 in 6)</span>`;
+}
+
+function drawBench(s) {
+  const b = s.bench.at(-1), b0 = s.bench[0];
+  if (!b) { $("bench").innerHTML = ""; return; }
+  const rows = [
+    ["vs top-bot models", "vsTop"],
+    ["vs field models", "vsField"],
+    ["vs past champions", "vsLeague"],
+    ["vs untrained bot", "vsGen0"],
+    ["vs server sims", "vsSims"],
+    ["vs starter kits", "vsStarter"],
+  ].filter(([, k]) => b[k] !== null && b[k] !== undefined);
+  $("bench").innerHTML =
+    `<div class="note">Win rate on fixed benchmark tables (5 opponents of one type), latest at generation <b>${Number(b.gen)}</b>. Change since generation ${Number(b0.gen)} in green or red.</div>` +
+    rows.map(([label, k]) => {
+      const v = b[k], v0 = b0 !== b ? b0[k] : null;
+      const d = v0 === null || v0 === undefined ? "" : ` <span style="color:${v >= v0 ? "var(--good)" : "var(--bad)"};font-weight:650">${v >= v0 ? "+" : ""}${(100 * (v - v0)).toFixed(0)}</span>`;
+      return `<div class="row"><div>${label}${d}<div class="bar"><i style="width:${(100 * v).toFixed(1)}%"></i><u style="left:${(100 / 6).toFixed(1)}%"></u></div></div><b class="num">${(100 * v).toFixed(0)}%</b></div>`;
+    }).join("") +
+    (s.perBot && s.perBot.length
+      ? `<div class="note" style="margin-top:8px">Against 5 copies of one top bot's model, hardest first:</div>` +
+        s.perBot.slice().sort((a, c) => a.win - c.win).map((p) =>
+          `<div class="row"><div>vs ${esc(p.name)}<div class="bar"><i style="width:${(100 * p.win).toFixed(1)}%"></i><u style="left:${(100 / 6).toFixed(1)}%"></u></div></div><b class="num">${(100 * p.win).toFixed(0)}%</b></div>`).join("")
+      : "");
+}
+
+function tickStats() {
+  if (S) {
+    const now = Date.now() + clockSkew;
+    const age = now - Date.parse(S.updatedAt);
+    // A run that has missed several generations' worth of updates has stopped.
+    const stale = !S.finished && age > Math.max(90000, 6 * (S.lastGenMs || 0));
+    const extra = S.finished || stale ? 0 : Math.min(Math.max(0, age), S.lastGenMs || 60000) / 1000 * S.gamesPerSec;
+    shownGames = Math.max(shownGames, S.totalGames + extra);
+    $("sGames").textContent = fmt(shownGames);
+    $("stLeft").classList.toggle("stale", stale);
+    const left = Date.parse(S.deadline) - now;
+    if (S.starting) $("sLeft").textContent = "starting";
+    else if (S.finished) $("sLeft").textContent = "done";
+    else if (stale) $("sLeft").textContent = "stopped?";
+    else if (left > 0) {
+      const h = Math.floor(left / 3.6e6), m = Math.floor((left % 3.6e6) / 6e4);
+      $("sLeft").textContent = `${h}h ${String(m).padStart(2, "0")}m`;
+    } else $("sLeft").textContent = "wrapping up";
+  }
+  setTimeout(tickStats, 200);
+}
+tickStats();
+
+function onRecent(list) {
+  const ordered = list.slice().reverse();
+  $("record").innerHTML = ordered.map((r, i) =>
+    `<span class="p${r.place}${i === ordered.length - 1 ? " latest" : ""}" title="Match ${r.id}: ${ord(r.place)} with ${r.score} (best opponent ${r.best})">${ord(r.place)}</span>`).join("") +
+    (list.length ? `<em>← latest</em>` : "");
+  if (list.length) {
+    const wins = list.filter((r) => r.place === 1).length;
+    $("recordNote").innerHTML = `Nijello won <b>${wins} of ${list.length}</b> showcase matches. A random seat would win about 1 in 6.`;
+  }
+}
+
+// ---- live arena ----
+function ago(ms) {
+  const s = Math.max(0, Math.round((Date.now() + clockSkew - ms) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  return `${Math.round(s / 3600)}h ago`;
+}
+
+function ratingSpark(log) {
+  if (log.length < 2) return "";
+  const W = 300, H = 56, pad = 4;
+  const rs = log.map((p) => p.rating);
+  let lo = Math.min(...rs), hi = Math.max(...rs);
+  if (hi - lo < 20) { const mid = (hi + lo) / 2; lo = mid - 10; hi = mid + 10; }
+  const m0 = log[0].matches, m1 = log.at(-1).matches;
+  const x = (m) => pad + ((W - 2 * pad) * (m - m0)) / Math.max(1, m1 - m0);
+  const y = (r) => pad + (H - 2 * pad - 10) * (1 - (r - lo) / (hi - lo));
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rating after each match">` +
+    `<polyline fill="none" stroke="var(--good)" stroke-width="2" stroke-linejoin="round" points="${log.map((p) => `${x(p.matches).toFixed(1)},${y(p.rating).toFixed(1)}`).join(" ")}"/>` +
+    `<text x="${pad}" y="${H - 1}">match ${Number(m0)}: ${Number(log[0].rating)}</text><text x="${W - pad}" y="${H - 1}" text-anchor="end">match ${Number(m1)}: ${Number(log.at(-1).rating)}</text></svg>`;
+}
+
+// "2m ago" labels go stale between arena updates, so refresh them.
+setInterval(() => {
+  for (const el of document.querySelectorAll("#arena [data-t]")) el.textContent = ago(Number(el.dataset.t));
+}, 15000);
+
+function onArena(a) {
+  const el = $("arenaBody");
+  el.className = "";
+  if (!a.bot) {
+    el.className = "note";
+    el.textContent = `No bot named ${a.name} on the official server yet.`;
+    return;
+  }
+  const b = a.bot;
+  const provisional = b.matches < 25;
+  let html = `<div class="astats">
+    <div><b class="num">${b.rating ?? "–"}</b><span>Rating</span></div>
+    <div><b class="num">${b.rank ? "#" + b.rank : "–"}</b><span>of ${b.of} bots</span></div>
+    <div><b class="num">${b.matches}</b><span>Matches</span></div>
+    <div><b class="num">${b.wins}</b><span>Wins</span></div>
+  </div>`;
+  html += ratingSpark(a.ratingLog || []);
+  html += `<div class="note" style="margin-bottom:10px">` +
+    (provisional ? `Rating is provisional: it starts low because of uncertainty and settles after roughly 20–30 matches. ` : "") +
+    `Average ${(Number(b.avgScore) || 0).toFixed(0)} points a match.` +
+    (b.leader ? ` Leader: <b>${esc(b.leader.name)}</b> at ${Number(b.leader.rating)}.` : "") + `</div>`;
+  if (a.current) {
+    const c = a.current, me = c.players.find((p) => p.me);
+    html += `<div class="now"><span class="dot"></span>Playing <b>match ${Number(c.id)}</b> now · round ${Number(c.round)} of ${Number(c.total) || 68}` +
+      (me && c.place ? ` · <b>${Number(me.score)}</b> pts, ${ord(c.place)} of ${c.players.length}` : "") + `</div>`;
+  }
+  const counted = a.recent.filter((m) => m.place);
+  if (a.recent.length) {
+    html += `<ul class="alist" tabindex="0" aria-label="Recent arena matches">` + a.recent.map((m) => {
+      const me = m.players.find((p) => p.me);
+      const best = m.players.find((p) => !p.me);
+      const top = m.players[0];
+      const mine = me ? `<b>${Number(me.score)}</b> pts` : "not seated";
+      const vs = !top ? mine
+        : m.place === 1 ? `${mine} · next ${esc(best?.name ?? "–")} ${best ? Number(best.score) : ""}`
+        : `${mine} · won by ${esc(top.name)} ${Number(top.score)}`;
+      const title = m.players.map((p) => `${p.name}${p.sim ? " (sim)" : ""}: ${p.score}`).join(", ");
+      const when = m.endedAt ? `<span class="when" data-t="${Number(m.endedAt)}">${ago(m.endedAt)}</span>` : `<span class="when"></span>`;
+      return `<li title="${esc(title)}"><span class="pl p${m.place || 0}">${m.place ? ord(m.place) : "–"}</span><span class="vs">${vs}</span>${when}</li>`;
+    }).join("") + `</ul>`;
+    if (counted.length) {
+      const wins = counted.filter((m) => m.place === 1).length;
+      const avg = counted.reduce((s, m) => s + m.place, 0) / counted.length;
+      html += `<div class="note" style="margin-top:8px">Last ${counted.length}: <b>${wins}</b> win${wins === 1 ? "" : "s"} (ties for first count), average place <b>${avg.toFixed(1)}</b> of 6. Hover a row for every score.</div>`;
+    }
+  } else html += `<div class="note">No finished matches yet.</div>`;
+  el.innerHTML = html;
+}
+
+// ---- connection ----
+function connect() {
+  const es = new EventSource("events");
+  es.onopen = () => { $("live").className = "live on"; $("liveText").textContent = "live"; };
+  es.onerror = () => { $("live").className = "live"; $("liveText").textContent = "reconnecting"; };
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "status") onStatus(msg);
+    else if (msg.type === "arena") onArena(msg);
+    else if (msg.type === "recent") onRecent(msg.recent);
+    else if (msg.type === "match") startMatch(msg);
+    else if (msg.type === "backlog") { for (const ev of msg.events) apply(ev, false); }
+    else if (msg.type === "step" && M) apply(msg.ev, true);
+  };
+}
+addEventListener("resize", () => { if (S) drawChart(S); });
+connect();
+</script>
+</body>
+</html>

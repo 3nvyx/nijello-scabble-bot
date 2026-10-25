@@ -1,0 +1,13 @@
+node_modules/
+# Bot credentials: never commit.
+.token-*
+*.log
+# Large or regenerable data.
+bot/data/live.json
+bot/data/wordlist.txt
+bot/data/field.prev.json
+bot/data/styles.part*.json
+# Training outputs, and the tuned strategy Nijello plays (kept private
+# while the tournament runs).
+bot/runs/
+viewer/data/

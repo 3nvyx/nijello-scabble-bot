@@ -1,0 +1,15 @@
+{
+  "name": "scrabblebot-evo-live",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx bot.ts"
+  },
+  "dependencies": {
+    "spacetimedb": "^2.12.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0"
+  }
+}
