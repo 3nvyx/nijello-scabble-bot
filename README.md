@@ -94,7 +94,8 @@ the live field as a whole, past champions and the untrained bot. The dashed line
 - **Training** ([`train.ts`](bot/src/train.ts)). CMA-ES, an evolution strategy: each generation
   it tries 64 variations of the 48 numbers, plays each against the same 400 tables, and moves
   toward the ones that finished best. Tables mix models of the top live bots, the field as a
-  whole, past champions (self-play) and the server's simple bots, at 2–10 players.
+  whole, past champions (self-play) and the server's simple bots. Tables have 6 players, like
+  every real match so far; `TABLE_SIZES="2:3,4:7,6:30,10:14"` (size:weight) mixes in others.
 - **Simulator check** ([`fidelity.ts`](bot/src/fidelity.ts)). Replays Nijello's real matches with
   the same opponents, seats and strategy, and compares simulation with reality. One third of the
   matches is held out and never used for fitting.
