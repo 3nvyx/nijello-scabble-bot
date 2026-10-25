@@ -44,7 +44,7 @@ export function playedParams(): Map<number, { gen: string; p: Params }> {
   const decoded = new Map(Object.entries(files).map(([g, f]) => [g, decode(jsonToX(JSON.parse(readFileSync(`${root}${f}`, "utf8")).params))]));
   const out = new Map<number, { gen: string; p: Params }>();
   const log = readFileSync(`${root}live/${OUR_BOT}.log`, "latin1");
-  for (const m of log.matchAll(/match (\d+): seat \d+ of \d+, params (gen \d+)/g)) {
+  for (const m of log.matchAll(/match (\d+): seat \d+ of \d+.*?, params (gen \d+)/g)) {
     const p = decoded.get(m[2]!);
     if (p) out.set(Number(m[1]), { gen: m[2]!, p });
   }

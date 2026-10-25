@@ -49,7 +49,8 @@ training tunes all 48.
    without it: how much the best word I can play now improves, how much the best 7+ letter word
    improves, and how much the rack's potential changes. Potential is a learned "keep value" for
    each of the 26 letters, minus penalties for a bad vowel balance, duplicates, and a Q without a U.
-   It also adds a little for letters that would help a rival (denying them).
+   It also adds a small bonus in proportion to the letter's face value, a stand-in for keeping
+   valuable letters away from rivals.
 2. **How much to bid?** Its value of the letter times a multiplier that grows with the coins it has
    per auction still to come, capped at a share of its coins. In first-price auctions it shades
    the bid down.
@@ -100,8 +101,9 @@ the live field as a whole, past champions and the untrained bot. The dashed line
   the same opponents, seats and strategy, and compares simulation with reality. One third of the
   matches is held out and never used for fitting.
 - **Release gate** ([`release.sh`](bot/ops/release.sh)). A candidate goes live only if it beats
-  the live strategy on replays of real matches by more than 2 standard errors. The live bot
-  re-reads its strategy at every match start, never mid-match.
+  the live strategy on replays of real matches by at least one standard error (see
+  [Known issues](#known-issues)). The live bot re-reads its strategy at every match start, never
+  mid-match.
 
 ## The viewer
 
@@ -126,27 +128,33 @@ git clone https://github.com/3nvyx/nijello-scabble-bot.git
 cd nijello-scabble-bot/bot
 curl -fsSL -o data/wordlist.txt \
   "https://raw.githubusercontent.com/clockworklabs/scrabblebot/$(cat data/UPSTREAM_COMMIT)/spacetimedb/wordlist.txt"
-npm test                     # rules and dictionary tests
+npm test                     # rules, dictionary and planner tests (one planner test fails; see Known issues)
 ```
 
 **3. Download the arena's public matches and refit the opponents' bid models** (about 2
-minutes; no account needed, it reads the public tables anonymously). The repo already ships
-fitted models in `bot/data/`, so this step is only for fresh data:
+minutes; no account needed, it reads the public tables anonymously). Training works without it,
+using the fitted models shipped in `bot/data/`, but the match dump it writes (`data/live.json`)
+is needed by every step that replays real matches (step 6 and the release check). Set
+`OUR_BOT` to your bot's name so it isn't fitted as one of its own rivals:
 
 ```sh
-node src/profile.ts          # writes data/live.json and data/profiles.json
+OUR_BOT=<name> node src/profile.ts      # writes data/live.json and data/profiles.json
 ```
 
 **4. Train.** From scratch (or add `--init <params.json>` to start from a strategy you have):
 
 ```sh
-node src/train.ts --out runs/first --hours 4 --workers 8
+node src/train.ts --out runs/first --hours 4 --workers 8 --lambda 64 --games 400
 node src/bench.ts runs/first/best.json 300 6          # 300 games at 6 players
 ```
 
-`--workers` is one CPU core each. Leave a core or two free if a live bot runs on the same
-machine, and watch the temperature: [`viewer/temp-guard.sh`](viewer/temp-guard.sh) stops
-training if it gets too hot. A stopped run continues with `--resume`.
+`--workers` is one CPU core each; `--lambda` is candidates per generation and `--games` games
+per candidate (defaults 40 and 160). Leave a core or two free if a live bot runs on the same
+machine. A stopped run continues with `--resume`. On Linux,
+[`viewer/temp-guard.sh`](viewer/temp-guard.sh) stops training when the machine gets too hot:
+set `SESSION` to the tmux session your training runs in. Above 102 °C it also kills every other
+training, calibration or benchmark job you own and unloads Ollama models; its log paths are
+those of our machine.
 
 **5. Play live.**
 
@@ -155,19 +163,20 @@ training if it gets too hot. A stopped run continues with `--resume`.
    run `spacetime login`, then run the `spacetime call scrabblebot connect_id …` command the
    account page shows you.
 2. On the **Team** page, create a team and bot, then **Generate token** (shown once).
-3. Start the client:
+3. Put the strategy where the replay tools expect it, and start the client through `run.sh`,
+   which restarts it if it exits and writes the log (`live/<name>.log`) step 6 needs:
 
 ```sh
+mkdir -p runs/live && cp runs/first/best.json runs/live/params.json
 cd live && npm install
-BOT_NAME=<name> BOT_TOKEN=<token> PARAMS=../runs/first/best.json PLAN=12,450 npm start
+BOT_NAME=<name> BOT_TOKEN=<token> PARAMS=../runs/live/params.json PLAN=12,450 ./run.sh
 ```
 
 After the first start the token is saved to `live/.token-<name>` (never committed), so restarts
-need only `BOT_NAME` and `PARAMS`. `live/run.sh` restarts the client if it ever exits. For a
-tournament, add `TOURNAMENT_ID=<id>` once it's announced, and keep the bot online: a registered
-bot that's offline is still seated and loses every auction.
+need no `BOT_TOKEN`. For a tournament, add `TOURNAMENT_ID=<id>` once it's announced, and keep the
+bot online: a registered bot that's offline is still seated and loses every auction.
 
-**6. Calibrate the simulator on your bot's real matches** (once it has played 100+). These tools
+**6. Calibrate the simulator on your bot's real matches** (once it has played 100+; run from `bot/`). These tools
 replay your bot's own matches, so they read its log (`live/<name>.log`, written by `run.sh`) and
 the strategy it played (`runs/live/params.json`); set `OUR_BOT=<name>`:
 
@@ -187,6 +196,17 @@ name on our training machine, so link it once from the repo root:
 ln -s bot scrabblebot-evo
 cd viewer && node server.ts --host 127.0.0.1 --port 8090 --arena-bot <name>   # open http://127.0.0.1:8090
 ```
+
+## Known issues
+
+- **One planner test fails** (`test/planner.test.ts`, "planner never bids away a decisive final
+  tile"): the test sets up the very last auction, but `shouldPlan` in `src/planner.ts` only plans
+  while more than one tile is left, so the look-ahead never runs there.
+- **The release gate is looser than its comments say.** `ops/release.sh` promotes a candidate
+  that is at least 1 standard error better on replays; its comments and log message say 2.
+- **The replay tools are tied to our setup**: they read the strategy from
+  `runs/live/params.json` (plus one older backup file name) and the bot's log, and only replay
+  matches whose log line names a strategy file they have.
 
 ## Lessons so far
 
