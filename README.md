@@ -16,7 +16,8 @@ coins, points and rack (hidden letters show as ?), and Nijello in gold.*
 ![The official leaderboard, Nijello 7th](docs/images/official-leaderboard.jpg)
 
 **Ladder** (Oct 25, 2026, 08:45 PDT): **#7 of 146** by rating (2105 ±47), with **190 wins in 493
-matches (39%)**, the second-best win rate in the top 8, and 91.9 points a match. A fair share of
+matches (39%)**, behind only Waupus, james and K-13 for win rate in the top 8, and 91.9 points
+a match. A fair share of
 wins at a 6-bot table is 17%. It reached #1 twice, and #2 earlier this morning; ratings move fast.
 
 **Tournament 1** (Oct 24–25, 68 bots, 4 Swiss rounds at tables of 6, top 6 to the knockout):
@@ -127,19 +128,13 @@ curl -fsSL -o data/wordlist.txt \
 npm test                     # rules and dictionary tests
 ```
 
-**3. Download the arena's public matches and fit the opponent models** (about 2 minutes; no
-account needed, it reads the public tables anonymously):
+**3. Download the arena's public matches and refit the opponents' bid models** (about 2
+minutes; no account needed, it reads the public tables anonymously). The repo already ships
+fitted models in `bot/data/`, so this step is only for fresh data:
 
 ```sh
-node src/profile.ts                                    # writes data/live.json and data/profiles.json
-node src/fit-styles.ts --shard 0/1                     # word-play styles (or run shards in parallel)
-node src/fit-styles.ts --merge 1
-node src/calibrate-bids.ts --rounds 10 --reps 4 --style data/styles.json --write
-node src/fidelity.ts --split held --style data/styles.json   # how close is the simulator?
+node src/profile.ts          # writes data/live.json and data/profiles.json
 ```
-
-Re-run this block whenever you want fresh data. Don't use `profile.ts --calibrate` afterwards:
-it overwrites the calibration from `calibrate-bids.ts`.
 
 **4. Train.** From scratch (or add `--init <params.json>` to start from a strategy you have):
 
@@ -171,10 +166,25 @@ need only `BOT_NAME` and `PARAMS`. `live/run.sh` restarts the client if it ever 
 tournament, add `TOURNAMENT_ID=<id>` once it's announced, and keep the bot online: a registered
 bot that's offline is still seated and loses every auction.
 
-**6. Watch it (optional):**
+**6. Calibrate the simulator on your bot's real matches** (once it has played 100+). These tools
+replay your bot's own matches, so they read its log (`live/<name>.log`, written by `run.sh`) and
+the strategy it played (`runs/live/params.json`); set `OUR_BOT=<name>`:
 
 ```sh
-cd ../../viewer && node server.ts --host 127.0.0.1 --port 8090    # then open http://127.0.0.1:8090
+OUR_BOT=<name> node src/fit-styles.ts --shard 0/1 && node src/fit-styles.ts --merge 1   # word-play styles
+OUR_BOT=<name> node src/calibrate-bids.ts --rounds 10 --reps 4 --style data/styles.json --write
+OUR_BOT=<name> node src/fidelity.ts --split held --style data/styles.json   # simulator vs reality
+```
+
+After any `profile.ts` refit, re-run these. Don't use `profile.ts --calibrate`: it overwrites
+the calibration from `calibrate-bids.ts`.
+
+**7. Watch it (optional).** The viewer imports the bot code from `../scrabblebot-evo`, the folder
+name on our training machine, so link it once from the repo root:
+
+```sh
+ln -s bot scrabblebot-evo
+cd viewer && node server.ts --host 127.0.0.1 --port 8090 --arena-bot <name>   # open http://127.0.0.1:8090
 ```
 
 ## Lessons so far
@@ -185,7 +195,7 @@ cd ../../viewer && node server.ts --host 127.0.0.1 --port 8090    # then open ht
   produced candidates that looked great and didn't help live. After Phase 2 it's 72% vs 47%:
   better, still optimistic.
 - **Gate every release on real matches.** The release gate held back nearly every candidate
-  from long runs; the few it let through improved real play.
+  from long runs, even ones that looked better in training.
 - **Rivals differ in timing, not just bidding.** Chinese Dante spends the same coins as
   Nijello but scores two thirds of its points early, which leaves it more coins mid-game. Nijello
   did the reverse. The bingo rule is the first answer.
