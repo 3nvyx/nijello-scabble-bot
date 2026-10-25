@@ -7,7 +7,7 @@
 //   nice -n 19 node server.ts --host <gx10-tailscale-ip> --port 8090            follow the active run
 //   nice -n 19 node server.ts --host <gx10-tailscale-ip> --run ../scrabblebot-evo/runs/v5-profiles
 
-import { mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type ServerResponse } from "node:http";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,8 @@ function arg(name: string, def: string): string {
 const HOST = arg("host", "127.0.0.1");
 const PORT = Number(arg("port", "8090"));
 const EVO = fileURLToPath(new URL("../scrabblebot-evo/", import.meta.url));
+// Experimental copy of the project; its training runs are followed too.
+const NEXT = fileURLToPath(new URL("../scrabblebot-next/", import.meta.url));
 // "auto" (default) follows whichever training run is active; or a fixed
 // run directory.
 const RUN_ARG = arg("run", "auto");
@@ -214,7 +216,7 @@ interface ActiveRun {
 }
 
 // Output directories of running train.ts processes under this project's
-// runs/, oldest process first, from /proc (Linux). Oldest first so a short
+// runs/ (or scrabblebot-next's), oldest process first, from /proc (Linux). Oldest first so a short
 // side experiment doesn't take over from the main run.
 function trainerOuts(): string[] {
   let pids: string[];
@@ -231,7 +233,7 @@ function trainerOuts(): string[] {
       if (!/(^|\/)node$/.test(argv[0] ?? "") || !argv.some((a) => a.endsWith("src/train.ts"))) continue;
       const i = argv.indexOf("--out");
       const dir = resolve(readlinkSync(`/proc/${pid}/cwd`), i >= 0 && argv[i + 1] ? argv[i + 1]! : "runs/main");
-      if (!dir.startsWith(`${EVO}runs/`)) continue;
+      if (!dir.startsWith(`${EVO}runs/`) && !dir.startsWith(`${NEXT}runs/`)) continue;
       // Field 22 of /proc/<pid>/stat, counted after the ")" closing the name.
       const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
       const started = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
@@ -692,9 +694,12 @@ async function pollArena(): Promise<void> {
       await loadNames();
       namesFresh.done = true;
     }
-    const real = stats.filter((s) => botNames.get(Number(s.bot_id))?.sim === false && Number(s.matches_played) > 0);
+    const ELO_SCALE = 400 / (Math.LN10 * (25 / 6) * Math.SQRT2);
+    const skillOf = (row: any) => Math.round(1500 + ELO_SCALE * (Number(row.openskill_mu) - 25));
+    const provOf = (row: any) => ELO_SCALE * Number(row.openskill_sigma) > 175;
+    const real = stats.filter((s) => botNames.get(Number(s.bot_id))?.sim === false && Number(s.matches_played) >= 3 && !provOf(s));
     const mine = stats.find((s) => Number(s.bot_id) === arenaBotId);
-    const rating = mine && Number.isFinite(Number(mine.rating)) ? Number(mine.rating) : null;
+    const rating = mine && Number.isFinite(Number(mine.openskill_mu)) ? skillOf(mine) : null;
     const played = Number(mine?.matches_played) || 0;
 
     // Only matches newer than the newest we know, after the first poll.
@@ -722,7 +727,7 @@ async function pollArena(): Promise<void> {
     saveLog();
 
     const shown = myIds.map((id) => arenaMatches.get(id)).filter((m): m is ArenaMatch => !!m);
-    const leader = real.slice().sort((a, b) => Number(b.rating) - Number(a.rating))[0];
+    const leader = real.slice().sort((a, b) => skillOf(b) - skillOf(a))[0];
     arenaPayload = {
       type: "arena",
       name: ARENA_BOT,
@@ -732,9 +737,9 @@ async function pollArena(): Promise<void> {
         matches: played,
         wins: Number(mine?.wins) || 0,
         avgScore: played ? (Number(mine?.total_score) || 0) / played : 0,
-        rank: rating === null ? null : 1 + real.filter((s) => Number(s.rating) > rating).length,
+        rank: rating === null ? null : 1 + real.filter((s) => skillOf(s) > rating).length,
         of: real.length,
-        leader: leader ? { name: botNames.get(Number(leader.bot_id))?.name ?? "?", rating: Number(leader.rating) || 0 } : null,
+        leader: leader ? { name: botNames.get(Number(leader.bot_id))?.name ?? "?", rating: skillOf(leader) } : null,
       },
       current: shown.find((m) => m.status === MATCH_RUNNING && !isStale(m, now)) ?? null,
       recent: shown.filter((m) => m.status === MATCH_ENDED),
@@ -769,6 +774,247 @@ async function arenaLoop(): Promise<void> {
   }
 }
 
+// ---- live board ----
+// Nijello's current real match, as the same steps the showcase streams
+// (auction, result, word, end), so the page draws it on the same board.
+// All of it comes from the official server's public tables except
+// Nijello's own bids, which are read from its log. Other bots' bids stay
+// sealed (the server publishes them only after a match), and each bot's
+// starting letters show as "?" until it plays them.
+
+const LIVE_LOG = `${EVO}live/${ARENA_BOT}.log`;
+// While a match runs and someone is watching; otherwise just look for the
+// next match now and then.
+const LIVE_POLL_MS = 1500;
+const LIVE_IDLE_MS = 8000;
+
+interface LiveMatch {
+  id: number;
+  header: Record<string, unknown>;
+  events: Event[];
+  seatOf: Map<number, number>; // bot id -> seat
+  start: number; // starting rack size
+  won: Int32Array[];
+  played: Int32Array[];
+  balances: number[];
+  scores: number[];
+  opened: Set<number>; // auction ids shown as up for auction
+  closed: Set<number>; // auction ids with a result shown
+  words: Set<number>; // word_play ids shown
+  ended: boolean;
+}
+let liveM: LiveMatch | null = null;
+
+// What every viewer can know: letters won and not yet played, plus one "?"
+// per starting letter not yet revealed by a word.
+function liveRacks(m: LiveMatch): string[] {
+  return m.won.map((w, s) => {
+    const p = m.played[s]!;
+    let out = "";
+    let revealed = 0;
+    for (let c = 0; c < 26; c++) {
+      const d = w[c]! - p[c]!;
+      if (d > 0) out += String.fromCharCode(65 + c).repeat(d);
+      else revealed -= d;
+    }
+    return out + "?".repeat(Math.max(0, m.start - revealed));
+  });
+}
+
+function livePush(m: LiveMatch, step: Record<string, unknown>): void {
+  const ev = { ...step, state: { racks: liveRacks(m), balances: [...m.balances], scores: [...m.scores] } } as unknown as Event;
+  m.events.push(ev);
+  broadcast({ type: "lstep", ev });
+}
+
+// Nijello's bid in each round of one match, from the tail of its log. A
+// look-ahead line ("plan A -> B") replaces the policy's bid with B.
+function ourBids(matchId: number): Map<number, number> {
+  const out = new Map<number, number>();
+  try {
+    const size = statSync(LIVE_LOG).size;
+    const len = Math.min(size, 256 * 1024);
+    const buf = Buffer.alloc(len);
+    const fd = openSync(LIVE_LOG, "r");
+    try {
+      readSync(fd, buf, 0, len, size - len);
+    } finally {
+      closeSync(fd);
+    }
+    const text = buf.toString("latin1");
+    for (const m of text.matchAll(new RegExp(` m${matchId} r(\\d+) bag \\d+ '\\w' bal \\d+ -> (?:play \\S+ )?bid (\\d+)`, "g")))
+      out.set(Number(m[1]), Number(m[2]));
+    for (const m of text.matchAll(new RegExp(` m${matchId} r(\\d+) plan \\d+ -> (\\d+)`, "g"))) out.set(Number(m[1]), Number(m[2]));
+  } catch {
+    // no log here
+  }
+  return out;
+}
+
+const letterOf = (s: unknown) => String(s).charCodeAt(0) - 65;
+
+async function startLive(id: number): Promise<void> {
+  const [state] = await arenaSql(`SELECT * FROM match_state WHERE id = ${id}`);
+  const parts = (await arenaSql(`SELECT * FROM match_participant WHERE match_id = ${id}`)).sort((a, b) => Number(a.id) - Number(b.id));
+  if (parts.some((p) => !botNames.has(Number(p.bot_id)))) await loadNames();
+  const n = parts.length;
+  const spotlight = parts.findIndex((p) => Number(p.bot_id) === arenaBotId);
+  const tops = new Set((market?.top ?? []).map((t) => t.name));
+  const { gen } = currentBest();
+  const players = parts.map((p) => {
+    const b = botNames.get(Number(p.bot_id));
+    const name = b?.name ?? `#${p.bot_id}`;
+    if (Number(p.bot_id) === arenaBotId) return { name, kind: "evo", detail: `our bot · live strategy (generation ${gen})` };
+    if (b?.sim) return { name, kind: "sim", detail: "server lobby filler" };
+    return { name, kind: tops.has(name) ? "top" : "field", detail: tops.has(name) ? "top real bot" : "real bot" };
+  });
+  liveM = {
+    id,
+    header: {
+      type: "lmatch",
+      id,
+      gen,
+      source: "real",
+      auctionType: state && satsTag(state.auction_type) === AUCTION_VICKREY ? "Vickrey" : "FirstPrice",
+      spotlight,
+      players,
+      total: 98 - (Number(state?.starting_rack_size) || 5) * n,
+    },
+    events: [],
+    seatOf: new Map(parts.map((p, s) => [Number(p.bot_id), s])),
+    start: Number(state?.starting_rack_size) || 5,
+    won: parts.map(() => new Int32Array(26)),
+    played: parts.map(() => new Int32Array(26)),
+    balances: parts.map(() => 100),
+    scores: parts.map(() => 0),
+    opened: new Set(),
+    closed: new Set(),
+    words: new Set(),
+    ended: false,
+  };
+  broadcast(liveM.header);
+  livePush(liveM, { type: "deal" });
+}
+
+// Adds whatever happened in the match since the last poll, in time order.
+async function stepLive(m: LiveMatch): Promise<void> {
+  const [states, auctions, results, words, parts] = await Promise.all([
+    arenaSql(`SELECT * FROM match_state WHERE id = ${m.id}`),
+    arenaSql(`SELECT * FROM auction WHERE match_id = ${m.id}`),
+    arenaSql(`SELECT * FROM auction_result WHERE match_id = ${m.id}`),
+    arenaSql(`SELECT * FROM word_play WHERE match_id = ${m.id}`),
+    arenaSql(`SELECT * FROM match_participant WHERE match_id = ${m.id}`),
+  ]);
+  const total = Number(m.header.total) || 68;
+  const order = auctions.slice().sort((a, b) => (satsMs(a.opens_at) ?? 0) - (satsMs(b.opens_at) ?? 0));
+  const roundOf = new Map(order.map((a, i) => [Number(a.id), i + 1]));
+  const bids = ourBids(m.id);
+  const me = Number(m.header.spotlight);
+  type Item = { t: number; k: number; run: () => void };
+  const items: Item[] = [];
+  for (const a of order) {
+    const id = Number(a.id);
+    if (m.opened.has(id)) continue;
+    items.push({
+      t: satsMs(a.opens_at) ?? 0,
+      k: 0,
+      run: () => {
+        m.opened.add(id);
+        const round = roundOf.get(id)!;
+        livePush(m, { type: "auction", round, letter: letterOf(a.letter), bagLeft: total - round });
+      },
+    });
+  }
+  for (const r of results) {
+    const id = Number(r.auction_id);
+    if (m.closed.has(id)) continue;
+    const a = order.find((x) => Number(x.id) === id);
+    items.push({
+      t: satsMs(r.closed_at) ?? 0,
+      k: 1,
+      run: () => {
+        m.closed.add(id);
+        const letter = letterOf(r.letter);
+        const winnerId = Array.isArray(r.winner_bot_id) && r.winner_bot_id[0] === 0 ? Number(r.winner_bot_id[1]) : null;
+        const winner = winnerId === null ? -1 : (m.seatOf.get(winnerId) ?? -1);
+        const paid = Number(r.paid) || 0;
+        if (winner >= 0) {
+          m.balances[winner]! -= paid;
+          m.won[winner]![letter]!++;
+        }
+        const round = roundOf.get(id) ?? 0;
+        // A result the poll caught without its auction opening.
+        if (!m.opened.has(id) && a) m.opened.add(id);
+        livePush(m, { type: "result", letter, winner, paid, round, sealed: true, ourSeat: me, ourBid: bids.get(round) ?? null });
+      },
+    });
+  }
+  for (const w of words) {
+    const id = Number(w.id);
+    if (m.words.has(id)) continue;
+    items.push({
+      t: satsMs(w.played_at) ?? 0,
+      k: 2,
+      run: () => {
+        m.words.add(id);
+        const seat = m.seatOf.get(Number(w.bot_id));
+        if (seat === undefined) return;
+        const word = String(w.word);
+        const reward = Number(w.total_reward) || 0;
+        for (let i = 0; i < word.length; i++) m.played[seat]![word.charCodeAt(i) - 65]!++;
+        m.balances[seat]! += reward;
+        m.scores[seat]! += reward;
+        livePush(m, { type: "word", seat, word, reward, phase: m.closed.size ? "post" : "open" });
+      },
+    });
+  }
+  items.sort((a, b) => a.t - b.t || a.k - b.k);
+  for (const it of items) it.run();
+
+  const state = states[0];
+  if (state && satsTag(state.status) === MATCH_ENDED && !m.ended) {
+    m.ended = true;
+    // The server's totals are the truth; ours are rebuilt from its rows.
+    for (const p of parts) {
+      const s = m.seatOf.get(Number(p.bot_id));
+      if (s === undefined) continue;
+      m.scores[s] = Number(p.score) || 0;
+      m.balances[s] = Number(p.balance) || 0;
+    }
+    const scores = [...m.scores];
+    livePush(m, { type: "end", scores, places: scores.map((s) => 1 + scores.filter((o) => o > s).length), real: true });
+  }
+}
+
+// Newest match of ours: follows it until it ends, then waits for the next.
+let liveNewest = 0;
+async function pollLive(): Promise<void> {
+  if (arenaBotId === null) return;
+  const newer = liveNewest ? ` AND match_id > ${liveNewest}` : "";
+  const ids = (await arenaSql(`SELECT * FROM match_participant WHERE bot_id = ${arenaBotId}${newer}`)).map((p) => Number(p.match_id));
+  const newest = ids.length ? Math.max(...ids) : 0;
+  if (newest > liveNewest) {
+    liveNewest = newest;
+    await startLive(newest);
+  }
+  if (liveM && !liveM.ended) await stepLive(liveM);
+}
+
+let liveBusy = false;
+async function liveLoop(): Promise<void> {
+  if (liveBusy) return;
+  liveBusy = true;
+  try {
+    await pollLive();
+  } catch (e) {
+    console.error("live poll failed:", e instanceof Error ? e.message : e);
+  } finally {
+    liveBusy = false;
+    const busy = liveM && !liveM.ended && clients.size > 0;
+    setTimeout(liveLoop, busy ? LIVE_POLL_MS : LIVE_IDLE_MS);
+  }
+}
+
 const server = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
   if (path === "/" || path === "/index.html") {
@@ -797,6 +1043,10 @@ const server = createServer((req, res) => {
     if (match) {
       send(res, matchHeader(match));
       send(res, { type: "backlog", events: match.events.slice(0, shown) });
+    }
+    if (liveM) {
+      send(res, liveM.header);
+      send(res, { type: "lbacklog", events: liveM.events });
     }
     return;
   }
@@ -829,4 +1079,6 @@ readStatus();
 setInterval(readStatus, 3000);
 tick();
 void arenaLoop();
+// The arena poll looks up our bot's id first.
+setTimeout(liveLoop, 3000);
 server.listen(PORT, HOST, () => console.log(`scrabble-live on http://${HOST}:${PORT}  (run: ${RUN_ARG})`));

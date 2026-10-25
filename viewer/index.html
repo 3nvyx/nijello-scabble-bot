@@ -131,6 +131,11 @@
   .chip.high { color: var(--text); }
   .chip.win { background: var(--good); border-color: var(--good); color: #08140d; }
   .chip.p1 { background: var(--accent); border-color: var(--accent); color: #1e1606; }
+  .tile.hid { background: transparent; box-shadow: none; border: 1px dashed var(--line); color: var(--faint); }
+  .modes { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; align-self: flex-start; }
+  .modes button { font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: none; border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  .modes button[aria-pressed="true"] { background: var(--line); color: var(--text); }
+  .modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .card .nums { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
   .card .nums b { color: var(--text); font-size: 20px; font-weight: 700; margin-right: 3px; }
   .card .lead { color: var(--good); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; align-self: center; margin-left: auto; }
@@ -248,10 +253,14 @@
   </div>
 </header>
 
-<p class="intro">Watch <span class="us">Nijello</span>, our bot (gold), play live against models of the real arena's top bots. Six bots bid coins for one letter per round and spell words from their letters; <b>most points when the bag runs out wins</b>. In the background, training plays thousands of games a second to improve it.</p>
+<p class="intro">Watch <span class="us">Nijello</span>, our bot (gold), in its real matches on the official server (<b>Live match</b>), or in simulated games against models of the arena's top bots (<b>Showcase</b>). Six bots bid coins for one letter per round and spell words from their letters; <b>most points when the bag runs out wins</b>. In the background, training plays thousands of games a second to improve it.</p>
 
 <main>
   <section class="panel stage">
+    <div class="modes" role="group" aria-label="Board">
+      <button type="button" id="mLive" aria-pressed="true">Live match</button>
+      <button type="button" id="mShow" aria-pressed="false">Showcase</button>
+    </div>
     <div>
       <div class="meta" id="meta"><span>Waiting for the first match…</span></div>
       <div class="progress" style="margin-top:10px"><i id="prog"></i></div>
@@ -293,7 +302,8 @@
 
 <footer>
   <p><b>Rules.</b> Everyone starts with 100 coins and 5 random letters. Each round one letter from the bag gets sealed bids; the highest bid wins it. In a Vickrey auction the winner pays the second-highest bid, in a first-price auction their own. Words earn coins and points at once: letter values times a length bonus (1× up to 3 letters, 3× for 7+), which is why strong bots save up for 7-letter words.</p>
-  <p><b>Who's playing.</b> Named opponents are models of the arena's top bots, built from their public match history: they bid like the real bot's past winning bids and favour the word lengths it plays. They are approximations, not the bots themselves. "Field model" bids like the average real bot; sims and starter kits are the server's simple bots. Showcase matches are extra games, slowed down so you can follow them; they don't affect training.</p>
+  <p><b>Live match.</b> Nijello's current real match, a second or two behind. Other bots' bids are sealed until the match ends, so only the price paid shows; each bot's starting letters show as "?" until it plays them.</p>
+  <p><b>Who's playing in the showcase.</b> Named opponents are models of the arena's top bots, built from their public match history: they bid like the real bot's past winning bids and favour the word lengths it plays. They are approximations, not the bots themselves. "Field model" bids like the average real bot; sims and starter kits are the server's simple bots. Showcase matches are extra games, slowed down so you can follow them; they don't affect training.</p>
 </footer>
 
 <script>
@@ -306,6 +316,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 function tile(ch, cls = "") {
+  if (ch === "?") return `<span class="tile hid ${cls}" title="Starting letter, hidden until played">?</span>`;
   const v = FACE[ch.charCodeAt(0) - 65];
   return `<span class="tile ${cls}">${ch}<sub>${v}</sub></span>`;
 }
@@ -316,7 +327,7 @@ let round = 0, total = 68, lastState = null, feedCount = 0, bids = null;
 
 function startMatch(h) {
   M = h;
-  round = 0; total = 68; lastState = null; bids = null;
+  round = 0; total = h.total || 68; lastState = null; bids = null;
   $("feed").innerHTML = "";
   feedCount = 0;
   $("players").innerHTML = h.players.map((p, i) => {
@@ -340,7 +351,7 @@ function startMatch(h) {
   });
   setMeta();
   setStage("?", true, "New match", "Dealing racks…", "");
-  addFeed("", `Match ${h.id} · ${h.auctionType === "Vickrey" ? "Vickrey (second-price)" : "first-price"} auctions`, true);
+  addFeed("", `${h.source === "real" ? "Real match" : "Match"} ${h.id} · ${h.auctionType === "Vickrey" ? "Vickrey (second-price)" : "first-price"} auctions`, true);
 }
 
 function setStage(big, empty, label, say, sub, anim = false) {
@@ -360,7 +371,8 @@ function setMeta() {
     `<span><b>${M.auctionType === "Vickrey" ? "Vickrey" : "First-price"}</b> auctions</span>` +
     `<span>Round <b class="num">${round}</b> of ${total}</span>` +
     `<span><b class="num">${left}</b> letters left in bag</span>` +
-    (M.source === "live" ? `<span>Nijello: <b>live strategy</b>, generation ${Number(M.gen)}</span>`
+    (M.source === "real" ? `<span><b>Real match</b> on the official server · Nijello generation ${Number(M.gen)}</span>`
+      : M.source === "live" ? `<span>Nijello: <b>live strategy</b>, generation ${Number(M.gen)}</span>`
       : M.source === "training" ? `<span>Nijello: best from training, <b>generation ${Number(M.gen)}</b></span>`
       : `<span>Nijello: <b>default strategy</b></span>`);
   $("prog").style.width = `${(100 * round) / total}%`;
@@ -462,6 +474,36 @@ function apply(ev, live) {
       $("aSub").textContent = "Bids revealed…";
       break;
     case "result": {
+      // A real match: only Nijello's own bid is known while it runs.
+      if (ev.sealed) {
+        $("auction").classList.remove("bidding");
+        const me = ev.ourSeat, ours = ev.ourBid;
+        cards.forEach((c, i) => {
+          c.chip.hidden = false;
+          if (i === ev.winner) {
+            c.chip.className = "chip win";
+            c.chip.textContent = i === me && ours && ours !== ev.paid ? `won · bid ${ours}, paid ${ev.paid}` : `won · paid ${ev.paid}`;
+          } else if (i === me && ours !== null) {
+            c.chip.className = "chip";
+            c.chip.textContent = ours > 0 ? `bid ${ours}` : "no bid";
+          } else {
+            c.chip.className = "chip sealed";
+            c.chip.textContent = "sealed bid";
+          }
+        });
+        if (ev.winner >= 0) {
+          $("aSay").textContent = `${M.players[ev.winner].name} wins ${L(ev.letter)}`;
+          $("aSub").innerHTML = `Paid <b>${ev.paid}</b>` + (ev.winner !== me && ours ? ` · Nijello bid ${ours}` : "");
+          cards[ev.winner].el.classList.add("won");
+          addFeed(`R${round}`, `${L(ev.letter)} → ${who(ev.winner)} for ${ev.paid}`);
+        } else {
+          $("aSay").textContent = `No one bid on ${L(ev.letter)}`;
+          $("aSub").textContent = "Nobody wanted it";
+          addFeed(`R${round}`, `${L(ev.letter)}: no bids`, true);
+        }
+        renderState(ev.state, live && ev.winner >= 0 ? { newTile: { seat: ev.winner, letter: L(ev.letter) } } : {});
+        break;
+      }
       const bs = bids || [];
       $("auction").classList.remove("bidding");
       showBids(bs, ev.winner, ev.paid);
@@ -506,7 +548,7 @@ function apply(ev, live) {
         ? `${names[0]} wins with ${ev.scores[winners[0]]} points`
         : `${names.join(" and ")} tie at ${ev.scores[winners[0]]} points`;
       setStage("★", true, "Match over", say,
-        `Nijello finished <b>${ord(ev.places[me])}</b> with ${ev.scores[me]} points · next match in a few seconds`);
+        `Nijello finished <b>${ord(ev.places[me])}</b> with ${ev.scores[me]} points · ${M.source === "real" ? "waiting for its next real match" : "next match in a few seconds"}`);
       addFeed("", `<b>${esc(say)}</b>`, true);
       $("announce").textContent = `${say}. Nijello finished ${ord(ev.places[me])}.`;
       $("prog").style.width = "100%";
@@ -718,6 +760,46 @@ function onArena(a) {
   el.innerHTML = html;
 }
 
+// ---- board: live match or showcase ----
+// Both feeds are kept; the board draws the chosen one and redraws it from
+// its stored events when switched.
+const feeds = { live: { h: null, evs: [] }, show: { h: null, evs: [] } };
+let mode = "live";
+try { if (localStorage.getItem("boardMode") === "show") mode = "show"; } catch {}
+
+function onHeader(f, h) {
+  feeds[f] = { h, evs: [] };
+  if (f === mode) startMatch(h);
+}
+function onEvents(f, evs, live) {
+  const fd = feeds[f];
+  if (!fd.h) return;
+  fd.evs.push(...evs);
+  if (f === mode) for (const ev of evs) apply(ev, live);
+}
+function setMode(f) {
+  mode = f;
+  try { localStorage.setItem("boardMode", f); } catch {}
+  $("mLive").setAttribute("aria-pressed", String(f === "live"));
+  $("mShow").setAttribute("aria-pressed", String(f === "show"));
+  const fd = feeds[f];
+  if (fd.h) {
+    startMatch(fd.h);
+    for (const ev of fd.evs) apply(ev, false);
+    return;
+  }
+  M = null;
+  cards = [];
+  $("players").innerHTML = "";
+  $("feed").innerHTML = "";
+  $("prog").style.width = "0%";
+  $("meta").innerHTML = `<span>${f === "live" ? "Looking for Nijello's latest real match…" : "Waiting for the first showcase match…"}</span>`;
+  setStage("?", true, f === "live" ? "Live match" : "Showcase", "Waiting…", "");
+}
+$("mLive").onclick = () => setMode("live");
+$("mShow").onclick = () => setMode("show");
+setMode(mode);
+
 // ---- connection ----
 function connect() {
   const es = new EventSource("events");
@@ -728,9 +810,12 @@ function connect() {
     if (msg.type === "status") onStatus(msg);
     else if (msg.type === "arena") onArena(msg);
     else if (msg.type === "recent") onRecent(msg.recent);
-    else if (msg.type === "match") startMatch(msg);
-    else if (msg.type === "backlog") { for (const ev of msg.events) apply(ev, false); }
-    else if (msg.type === "step" && M) apply(msg.ev, true);
+    else if (msg.type === "match") onHeader("show", msg);
+    else if (msg.type === "backlog") onEvents("show", msg.events, false);
+    else if (msg.type === "step") onEvents("show", [msg.ev], true);
+    else if (msg.type === "lmatch") onHeader("live", msg);
+    else if (msg.type === "lbacklog") onEvents("live", msg.events, false);
+    else if (msg.type === "lstep") onEvents("live", [msg.ev], true);
   };
 }
 addEventListener("resize", () => { if (S) drawChart(S); });

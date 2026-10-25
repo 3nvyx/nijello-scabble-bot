@@ -16,7 +16,7 @@
 set -u
 STOP_C="${STOP_C:-100}"
 KILL_C="${KILL_C:-102}"
-SESSION="${SESSION:-next-train}"
+SESSION="${SESSION:-v2-train}"
 LOG="$HOME/scrabble-live/temp-guard.log"
 export PATH="$HOME/.local/node/current/bin:/usr/local/bin:/usr/bin:/bin"
 # Heavy jobs from the training project; the live bot and site don't match.
